@@ -1,197 +1,73 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use rustc_serialize::Encodable;
-use rustc_serialize::Encoder;
-use rustc_serialize::json;
-
 use openssl;
 use openssl::ssl;
 use openssl::ssl::SslStream;
+
+use serde_json;
 
 use std::ops::{Range, Index};
 use std::net::TcpStream;
 use std::io::{Cursor};
 use std::path::Path;
 use std::vec::Vec;
-use std::collections::HashMap;
 use std::time;
 
 use num::pow;
 use rand::{self, Rng};
+use hex::FromHex;
 
+use std::io::Read;
+use std::io::Write;
 
-#[derive(Debug)]
-pub struct Payload<'a> {
-    pub aps: PayloadAPS<'a>,
-    pub info: Option<HashMap<&'a str, &'a str>>
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Payload {
+    pub aps: PayloadAPS,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub info: Option<serde_json::Value>
 }
 
-#[derive(Debug)]
-pub struct PayloadAPS<'a> {
-    pub alert: PayloadAPSAlert<'a>,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PayloadAPS {
+    #[serde(skip_serializing_if = "Option::is_none")]
+	pub alert: Option<PayloadAPSAlert>,
+	#[serde(skip_serializing_if = "Option::is_none")]
     pub badge: Option<i32>,
-    pub sound: Option<&'a str>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub sound: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
     pub content_available: Option<i32>,
-	pub category: Option<&'a str>
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub category: Option<String>
 }
 
-#[derive(Debug)]
-pub struct PayloadAPSAlertDictionary<'a> {
-    pub title: Option<&'a str>,
-    pub body: Option<&'a str>,
-    pub title_loc_key: Option<&'a str>,
-    pub title_loc_args: Option<Vec<&'a str>>,
-    pub action_loc_key: Option<&'a str>,
-    pub loc_key: Option<&'a str>,
-    pub loc_args: Option<Vec<&'a str>>,
-    pub launch_image: Option<&'a str>
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PayloadAPSAlertDictionary {
+    #[serde(skip_serializing_if = "Option::is_none")]
+	pub title: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub body: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub title_loc_key: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub title_loc_args: Option<Vec<String>>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub action_loc_key: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub loc_key: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub loc_args: Option<Vec<String>>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub launch_image: Option<String>
 }
 
-#[derive(Debug)]
-pub enum PayloadAPSAlert<'a> {
-    Plain(&'a str),
-    Localized(&'a str, Vec<&'a str>),
-	Dictionary(PayloadAPSAlertDictionary<'a>)
+#[derive(Serialize, Deserialize, Debug)]
+pub enum PayloadAPSAlert {
+    Plain(String),
+	Localized(String, Vec<String>),
+	Dictionary(PayloadAPSAlertDictionary)
 }
 
-impl<'a> Encodable for Payload<'a> {
-    fn encode<S: Encoder>(&self, encoder: &mut S) -> Result<(), S::Error> {
-		match *self {
-		    Payload{ref aps, ref info} => {
-				if let Some(ref map) = *info {
-					encoder.emit_struct("Payload", 1 + map.len(), |encoder| {
-					try!(encoder.emit_struct_field( "aps", 0usize, |encoder| aps.encode(encoder)));
-					let mut index = 1usize;
-					for (key, val) in map.iter() {
-					    try!(encoder.emit_struct_field(key, index, |encoder| val.encode(encoder)));
-					    index = index + 1;
-					}
-					Ok(())
-					})
-				}
-				else {
-					encoder.emit_struct("Payload", 1, |encoder| {
-					try!(encoder.emit_struct_field( "aps", 0usize, |encoder| aps.encode(encoder)));
-					Ok(())
-					})
-				}
-		    }
-		}
-    }
-}
-
-impl<'a> Encodable for PayloadAPS<'a> {
-    fn encode<S: Encoder>(&self, encoder: &mut S) -> Result<(), S::Error> {
-        match *self {
-			PayloadAPS{ref alert, ref badge, ref sound, ref content_available, ref category} => {
-				let mut count = 1;
-		        if badge.is_some() { count = count + 1; }
-		        if sound.is_some() { count = count + 1; }
-		        if content_available.is_some() { count = count + 1; }
-		        if category.is_some() { count = count + 1; }
-	        
-		        let mut index = 0usize;
-				encoder.emit_struct("PayloadAPS", count, |encoder| {
-					try!(encoder.emit_struct_field( "alert", index, |encoder| alert.encode(encoder)));
-					index = index + 1;
-					if badge.is_some() { 
-						try!(encoder.emit_struct_field( "badge", index, |encoder| badge.unwrap().encode(encoder)));
-						index = index + 1;
-		            }
-		            if sound.is_some() { 
-						try!(encoder.emit_struct_field( "sound", index, |encoder| sound.unwrap().encode(encoder)));
-						index = index + 1;
-		            }
-		            if content_available.is_some() { 
-						try!(encoder.emit_struct_field( "content-available", index, |encoder| content_available.unwrap().encode(encoder)));
-						index = index + 1;
-		            }
-		            if category.is_some() { 
-						try!(encoder.emit_struct_field( "category", index, |encoder| category.unwrap().encode(encoder)));
-						index = index + 1;
-		            }
-					Ok(())
-				})
-			}
-		}
-    }
-}
-
-impl<'a> Encodable for PayloadAPSAlert<'a> {
-    fn encode<S: Encoder>(&self, encoder: &mut S) -> Result<(), S::Error> {
-		match *self {
-		    PayloadAPSAlert::Plain(ref str) => {
-				encoder.emit_str(str)
-		    },
-		    PayloadAPSAlert::Localized(ref key, ref args) => {
-				encoder.emit_struct("PayloadAPSAlert", 2, |encoder| {
-					try!(encoder.emit_struct_field( "loc-key", 0usize, |encoder| key.encode(encoder)));
-					try!(encoder.emit_struct_field( "loc-args", 1usize, |encoder| args.encode(encoder)));
-					Ok(())
-					})
-			},
-		    PayloadAPSAlert::Dictionary(ref dictionary) => {
-				try!(dictionary.encode(encoder));
-				Ok(())
-			}
-		}
-	}
-}
-
-impl<'a> Encodable for PayloadAPSAlertDictionary<'a> {
-    fn encode<S: Encoder>(&self, encoder: &mut S) -> Result<(), S::Error> {
-        match *self {
-			PayloadAPSAlertDictionary{ref title, ref body, ref title_loc_key, ref title_loc_args, ref action_loc_key, ref loc_key, ref loc_args, ref launch_image} => {
-				let mut count = 0;
-		        if title.is_some() { count = count + 1; }
-		        if body.is_some() { count = count + 1; }
-		        if title_loc_key.is_some() { count = count + 1; }
-		        if title_loc_args.is_some() { count = count + 1; }
-		        if action_loc_key.is_some() { count = count + 1; }
-		        if loc_key.is_some() { count = count + 1; }
-		        if loc_args.is_some() { count = count + 1; }
-		        if launch_image.is_some() { count = count + 1; }
-	        
-		        let mut index = 0usize;
-				encoder.emit_struct("PayloadAPSAlertDictionary", count, |encoder| {
-					if title.is_some() { 
-						try!(encoder.emit_struct_field( "title", index, |encoder| title.unwrap().encode(encoder)));
-						index = index + 1;
-		            }
-		            if body.is_some() { 
-						try!(encoder.emit_struct_field( "body", index, |encoder| body.unwrap().encode(encoder)));
-						index = index + 1;
-		            }
-		            if title_loc_key.is_some() { 
-						try!(encoder.emit_struct_field( "title-loc-key", index, |encoder| title_loc_key.unwrap().encode(encoder)));
-						index = index + 1;
-		            }
-					if let Some(ref title_loc_args_) = *title_loc_args {
-						try!(encoder.emit_struct_field( "title-loc-args", index, |encoder| title_loc_args_.encode(encoder)));
-						index = index + 1;
-					}
-		            if action_loc_key.is_some() { 
-						try!(encoder.emit_struct_field( "action-loc-key", index, |encoder| action_loc_key.unwrap().encode(encoder)));
-						index = index + 1;
-		            }
-		            if loc_key.is_some() { 
-						try!(encoder.emit_struct_field( "loc-key", index, |encoder| loc_key.unwrap().encode(encoder)));
-						index = index + 1;
-		            }
-					if let Some(ref loc_args_) = *loc_args {
-						try!(encoder.emit_struct_field( "title-loc-args", index, |encoder| loc_args_.encode(encoder)));
-						index = index + 1;
-					}
-		            if launch_image.is_some() { 
-						try!(encoder.emit_struct_field( "launch-image", index, |encoder| launch_image.unwrap().encode(encoder)));
-						index = index + 1;
-		            }
-					Ok(())
-				})
-			}
-		}
-    }
-}
 
 #[allow(dead_code)]
 fn hex_to_int(hex: &str) -> u32 {
@@ -214,26 +90,6 @@ fn hex_to_int(hex: &str) -> u32 {
     }
     
     return total;
-}
-
-#[allow(dead_code)]
-fn convert_to_binary(device_token: &str) -> Vec<u8> {
-    let mut device_token_bytes: Vec<u8> = Vec::new();
-    for i in 0..8 {
-		let string = device_token.to_string();
-		let range = Range{start:i*8, end:i*8+8};
-		let sub_str = string.index(range);
-	
-		let sub_str_num = hex_to_int(sub_str);
-		let mut sub_str_bytes = vec![];
-		let _ = sub_str_bytes.write_u32::<BigEndian>(sub_str_num);
-	
-        for s in sub_str_bytes.iter() {
-            device_token_bytes.push(*s);
-        }
-    }
-    
-    return device_token_bytes;
 }
 
 #[allow(dead_code)]
@@ -273,14 +129,14 @@ impl<'a> APNS<'a> {
     
     #[allow(dead_code)]
 	pub fn get_feedback(&self) -> Result<Vec<(u32, String)>, Error> {
-		let apns_feedback_production = "feedback.push.apple.com:2196";
-		let apns_feedback_development = "feedback.sandbox.push.apple.com:2196";
+		let apns_feedback_production = ("feedback.push.apple.com",2196);
+		let apns_feedback_development = ("feedback.sandbox.push.apple.com",2196);
         
 		let apns_feedback_url = if self.sandbox { apns_feedback_development } else { apns_feedback_production };
 		let mut stream = try!(get_ssl_stream(apns_feedback_url, self.certificate, self.private_key, self.ca_certificate));
 
 		let mut tokens: Vec<(u32, String)> = Vec::new();
-        let mut read_buffer = [0u8; 38];
+		let mut read_buffer = [0u8; 38];
         loop {
             match stream.ssl_read(&mut read_buffer) {
                 Ok(size) => {
@@ -288,11 +144,11 @@ impl<'a> APNS<'a> {
                         break;
                     }
                 },
-                Err(..) => {
-                    /*				return Result::Err(SslError::StreamError(error));*/
-                    break;
+				Err(e) => {
+				    return Err(Error::SslStream(e));
                 }
             }
+			//println!("feedback read: {:?}",read_buffer);
 		    let time_range = Range{start:0, end:4};
 		    let time_slice = read_buffer.index(time_range);
 		    let time = convert_to_timestamp(time_slice);
@@ -308,11 +164,16 @@ impl<'a> APNS<'a> {
     }
 
     #[allow(dead_code)]
-    pub fn send_payload(&self, payload: Payload, device_token: &str) {
-        let notification_bytes = get_notification_bytes(payload, device_token);
-
-        let apns_url_production = "gateway.push.apple.com:2195";
-        let apns_url_development = "gateway.sandbox.push.apple.com:2195";
+	pub fn send_payload(&self, payload: Payload, device_token: &str) -> Result<u32,Error> {
+		use std::str;
+		let mut rng = rand::thread_rng();
+		let notification_identifier = rng.gen::<u32>();
+		println!("payload: {:?}",payload);
+		let notification_bytes = get_notification_bytes(payload,notification_identifier, device_token)?;
+		let not_str = unsafe { str::from_utf8_unchecked(&notification_bytes) };
+		//println!("payload: {}",not_str);
+        let apns_url_production = ("gateway.push.apple.com",2195);
+        let apns_url_development = ("gateway.sandbox.push.apple.com",2195);
         
         let apns_url = if self.sandbox { apns_url_development } else { apns_url_production };
         
@@ -321,8 +182,22 @@ impl<'a> APNS<'a> {
             Ok(mut ssls) => {
                 if let Err(error) = ssls.ssl_write(&notification_bytes) {
                     println!("ssl_stream write error {:?}", error); 
+					return Err(Error::SslStream(error));
                 }
-				
+				ssls.flush().unwrap();
+//				//FIXME: handle errors:
+//				//return Ok(notification_identifier);
+//				//ssls.get_mut().set_read_timeout(Some(time::Duration::new(0, 100000000))); //10ms
+//				println!("num_bytes: {:?}",ssls.ssl().pending());
+//				let mut read_buffer = [0u8; 6];
+//				let mut read_buffer2 = [0u8; 0];
+//				println!("read 1: {:?}",ssls.ssl_read(&mut read_buffer2));
+//				println!("num_bytes2: {:?}",ssls.ssl().pending());
+//				//let read = ssls.ssl_read(&mut read_buffer);
+//				//println!("read: {:?} {:?}",read,read_buffer);
+//				let mut res_vec: Vec<u8> = vec![];
+//				let res = ssls.read_to_end(&mut res_vec);
+//				println!("read_to_end: {:?} {:?}",res,res_vec);
 				// Read possible error code response
 				if ssls.ssl().pending() == 6 {
                     let mut read_buffer = [0u8; 6];
@@ -335,28 +210,25 @@ impl<'a> APNS<'a> {
                         }
                         Err(error) => {
                             println!("ssl_stream read error {:?}", error);
+							return Err(Error::SslStream(error));
                         }
                     }
                 }
             },
             Err(error) => {
                 println!("failed to get_ssl_stream error {:?}", error);
+				return Err(error);
             }
         };
+		Ok(notification_identifier)
     }
 }
 
-fn get_notification_bytes(payload: Payload, device_token: &str) -> Vec<u8> {
-    let payload_str = match json::encode(&payload) {
-        Ok(json_str) => { json_str.to_string() }
-        Err(error) => {
-            println!("json encode error {:?}", error);
-            return vec![]; 
-        }
-    };
+fn get_notification_bytes(payload: Payload, identifier: u32, device_token: &str) -> Result<Vec<u8>,Error> {
+	let payload_str = json!(payload).to_string();
 
     let payload_bytes = payload_str.into_bytes();
-    let device_token_bytes: Vec<u8> = convert_to_binary(device_token);
+	let device_token_bytes: Vec<u8> = Vec::from_hex(device_token).unwrap();
 
     let mut notification_buffer: Vec<u8> = vec![];
     let mut message_buffer: Vec<u8> = vec![];
@@ -370,10 +242,14 @@ fn get_notification_bytes(payload: Payload, device_token: &str) -> Vec<u8> {
         message_buffer.push(*s);
     }
     for s in device_token_bytes.iter() {
-        message_buffer.push(*s);
-    }
+	    message_buffer.push(*s);
+	}
 
     // Payload
+	if payload_bytes.len() > 2048 {
+	    return Err(Error::PayLoadTooBig());
+	}
+
     let mut payload_length = vec![];
     let _ = payload_length.write_u16::<BigEndian>(payload_bytes.len() as u16);
 
@@ -384,6 +260,8 @@ fn get_notification_bytes(payload: Payload, device_token: &str) -> Vec<u8> {
     for s in payload_bytes.iter() {
         message_buffer.push(*s);
     }
+
+
 
     // Notification identifier
     let payload_id = rand::thread_rng().gen();
@@ -419,6 +297,19 @@ fn get_notification_bytes(payload: Payload, device_token: &str) -> Vec<u8> {
     for s in exp_date_be.iter() {
         message_buffer.push(*s);
     }
+	// notification identifier
+	let mut notification_identifier_be = vec![];
+	let _ = notification_identifier_be.write_u32::<BigEndian>(identifier as u32);
+	let mut notification_identifier_length = vec![];
+	let _ = notification_identifier_length.write_u16::<BigEndian>(notification_identifier_be.len() as u16);
+
+    message_buffer.push(3u8);
+	for s in notification_identifier_length.iter() {
+	    message_buffer.push(*s);
+	}
+	for s in notification_identifier_be.iter() {
+	    message_buffer.push(*s);
+	}
 
     // Priority
     let mut priority_length = vec![];
@@ -428,7 +319,7 @@ fn get_notification_bytes(payload: Payload, device_token: &str) -> Vec<u8> {
     for s in priority_length.iter() {
         message_buffer.push(*s);
     }
-    message_buffer.push(10u8);
+	message_buffer.push(5u8);
 
     let mut message_buffer_length = vec![];
     let _ = message_buffer_length.write_u32::<BigEndian>(message_buffer.len() as u32);
@@ -441,12 +332,12 @@ fn get_notification_bytes(payload: Payload, device_token: &str) -> Vec<u8> {
     for s in message_buffer.iter() {
         notification_buffer.push(*s);
     }
-    
-    return notification_buffer;
+	//println!("not buf: {:?}",notification_buffer);
+    return Ok(notification_buffer);
 }
 
-fn get_ssl_stream(url: &str, cert_file: &Path, private_key_file: &Path, ca_file: &Path) -> Result<SslStream<TcpStream>, Error> {
-    let mut connector_builder = try!(ssl::SslConnectorBuilder::new(ssl::SslMethod::tls()).map_err(|e|Error::SslContext(e)));
+fn get_ssl_stream((url_host,url_port):(&str,u64), cert_file: &Path, private_key_file: &Path, ca_file: &Path) -> Result<SslStream<TcpStream>, Error> {
+	let mut connector_builder = try!(ssl::SslConnectorBuilder::new(ssl::SslMethod::tls()).map_err(|e|Error::SslContext(e)));
 	{
 	    let context = connector_builder.builder_mut();
 		if let Err(error) = context.set_ca_file(ca_file) {
@@ -462,7 +353,7 @@ fn get_ssl_stream(url: &str, cert_file: &Path, private_key_file: &Path, ca_file:
 			return Err(Error::SslContext(error));
 		}
 	}
-    let tcp_conn = match TcpStream::connect(url) {
+    let tcp_conn = match TcpStream::connect(format!("{}:{}",url_host,url_port).as_str()) {
 		Ok(conn) => { 
 			conn 
 		},
@@ -471,7 +362,7 @@ fn get_ssl_stream(url: &str, cert_file: &Path, private_key_file: &Path, ca_file:
 		}
 	};
 	let connector = connector_builder.build();
-	return connector.connect(url,tcp_conn).map_err(|e|Error::Handshake(e));
+	connector.connect(url_host,tcp_conn).map_err(|e|Error::Handshake(e))
 }
 
 /* ERRORS */
@@ -481,5 +372,7 @@ quick_error! {
 	    Handshake(err: openssl::ssl::HandshakeError<TcpStream>) {from() cause(err)}
 		TcpStream(err: ::std::io::Error) { from() cause(err) }
 		SslContext(err: openssl::error::ErrorStack) { from() cause(err) }
+		SslStream(err: openssl::ssl::Error) { from() cause(err) }
+		PayLoadTooBig() {}
 	}
 }
