@@ -1,0 +1,11 @@
+[package]
+authors = ["Kristoffer Ström <k.stroem@1aim.com>"]
+name = "apns2"
+version = "0.1.0"
+[dependencies]
+error-chain = "*"
+futures = "*"
+httpbis = "*"
+openssl = "*"
+tls-api = "*"
+tls-api-openssl = "*"

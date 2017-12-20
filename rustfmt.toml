@@ -1,0 +1,3 @@
+error_on_line_overflow = false
+hard_tabs = true
+write_mode = "Overwrite"
