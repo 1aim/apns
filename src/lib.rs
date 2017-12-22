@@ -10,46 +10,70 @@ extern crate tls_api;
 extern crate tls_api_openssl;
 
 use std::env;
-
-use httpbis::Client;
 use futures::Future;
 
 mod auth;
+use auth::{ApnsConnector, AUTH};
+pub use auth::Auth;
+
 mod error;
-
-use auth::{ApnsConnector, Auth, AUTH};
 use error::Result;
+pub use error::Error;
 
+mod request;
+pub use request::{DeviceToken, Priority, Request};
+
+const PROD_SERVER: &str = "api.push.apple.com";
 const DEV_SERVER: &str = "api.development.push.apple.com";
 
-pub struct ApnsClient {
-	client: Client,
+pub type ApnsFuture = Box<futures::Future<Item = (), Error = Error>>;
+
+pub struct Client {
+	client: httpbis::Client,
 }
 
-impl ApnsClient {
-	pub fn new(auth: Auth) -> Result<Self> {
-		AUTH.with(|a| *a.borrow_mut() = Some(auth));
-		let client = Client::new_tls::<ApnsConnector>(DEV_SERVER, 443, Default::default())?;
-		Ok(ApnsClient { client })
+impl Client {
+	pub fn new(auth: &Auth) -> Result<Self> {
+		AUTH.with(|a| *a.borrow_mut() = Some(auth.clone()));
+		let client =
+			httpbis::Client::new_tls::<ApnsConnector>(PROD_SERVER, 443, Default::default())?;
+		Ok(Client { client })
 	}
 
-	pub fn send(&self, token: &str, body: &json::Value) {
-		let resp = self.client
-			.start_post(
-				&format!("/3/device/{}", token),
-				DEV_SERVER,
-				body.to_string().into(),
-			)
-			.collect()
-			.wait()
-			.expect("execute request");
-		println!("{}", resp.dump());
+	pub fn sandbox(auth: &Auth) -> Result<Self> {
+		AUTH.with(|a| *a.borrow_mut() = Some(auth.clone()));
+		let client =
+			httpbis::Client::new_tls::<ApnsConnector>(DEV_SERVER, 443, Default::default())?;
+		Ok(Client { client })
+	}
+
+	pub fn send(&self, request: Request) -> ApnsFuture {
+		let Request {
+			recipient,
+			payload,
+			priority,
+			expiration,
+		} = request;
+
+		Box::new(
+			self.client
+				.start_post(
+					&format!("/3/device/{:X}", recipient),
+					DEV_SERVER,
+					payload.to_string().into(),
+				)
+				.collect()
+				.map(|_| ())
+				.map_err(Into::into),
+		)
 	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use std::sync::Arc;
+	use std::str::FromStr;
 
 	#[test]
 	fn it_works() {
@@ -59,16 +83,18 @@ mod tests {
 			env::var("APNS_CA_FILE").unwrap(),
 		).unwrap();
 
-		let client = ApnsClient::new(auth).unwrap();
+		let request = Request::new(
+			DeviceToken::from_str(&env::var("APNS_DEVICE_TOKEN").unwrap()).unwrap(),
+			Arc::new(json!({
+				"action": "warning",
+				"title": "wonk",
+				"description": "tjusning"
+			})),
+			None,
+			None,
+		);
+		let client = Client::new(&auth).unwrap();
 
-		let body = json!({
-			"action": "warning",
-			"title": "wonk",
-			"description": "tjusning"
-		});
-
-		let token = "47CA3E85B27221F470E149AAAFF036EAFA52537DE3C76464E518C72C6DCED8C0";
-
-		client.send(token, &body);
+		client.send(request).wait();
 	}
 }

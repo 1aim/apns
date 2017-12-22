@@ -5,7 +5,9 @@ use openssl;
 use tls_api;
 
 error_chain! {
-	errors {}
+	errors {
+		InvalidToken
+	}
 
 	foreign_links {
 		Io(io::Error);
@@ -13,5 +15,6 @@ error_chain! {
 		Http2(httpbis::Error);
 		OpenSsl(openssl::error::ErrorStack);
 		Tls(tls_api::Error);
+		Num(::std::num::ParseIntError);
 	}
 }
