@@ -1,22 +1,84 @@
-// use std::path::{Path, PathBuf};
-// use std::fs::File;
-use std::{env, fmt, io};
+use std::path::{Path, PathBuf};
+use std::fs::File;
+use std::{fmt, io, result};
 
 use openssl::x509::X509_FILETYPE_PEM;
+use openssl::ssl;
+use std::cell::RefCell;
 
 use tls_api;
 use tls_api_openssl::{TlsConnector, TlsConnectorBuilder};
 
+use error::Result;
+
+// Since httpbis does not support runtime tls configuration,
+// we use a thread local to pass in the configuration to the builder.
+thread_local! {
+	pub static AUTH: RefCell<Option<Auth>> = RefCell::new(None);
+}
+
+#[derive(Clone, Debug)]
+pub struct Auth {
+	cert: PathBuf,
+	key: PathBuf,
+	ca: PathBuf,
+}
+
+impl Auth {
+	pub fn new<Cert, Key, Ca>(cert: Cert, key: Key, ca: Ca) -> Result<Self>
+	where
+		Cert: AsRef<Path>,
+		Key: AsRef<Path>,
+		Ca: AsRef<Path>,
+	{
+		let cert = cert.as_ref();
+		let key = key.as_ref();
+		let ca = ca.as_ref();
+
+		let _ = File::open(cert)?;
+		let _ = File::open(key)?;
+		let _ = File::open(ca)?;
+
+		Ok(Auth {
+			cert: cert.to_path_buf(),
+			key: key.to_path_buf(),
+			ca: ca.to_path_buf(),
+		})
+	}
+
+	pub fn mock() -> Self {
+		Auth {
+			cert: "testcert/cert.pem".into(),
+			key: "testcert/key.pem".into(),
+			ca: "testcrc/ca.pem".into(),
+		}
+	}
+
+	pub fn build(&self, b: &mut ssl::SslConnectorBuilder) -> tls_api::Result<()> {
+		b.set_ca_file(&self.ca).map_err(tls_api::Error::new)?;
+		b.set_certificate_file(&self.cert, X509_FILETYPE_PEM)
+			.map_err(tls_api::Error::new)?;;
+		b.set_private_key_file(&self.key, X509_FILETYPE_PEM)
+			.map_err(tls_api::Error::new)?;;
+
+		Ok(())
+	}
+}
+
 /// Wrapper types for doing apns authentification
-pub struct ApnsConnectorBuilder(pub TlsConnectorBuilder);
-pub struct ApnsConnector(pub TlsConnector);
+pub struct ApnsConnectorBuilder {
+	builder: TlsConnectorBuilder,
+	auth: Auth,
+}
+
+pub struct ApnsConnector(TlsConnector);
 
 impl tls_api::TlsConnectorBuilder for ApnsConnectorBuilder {
 	type Connector = ApnsConnector;
 	type Underlying = TlsConnectorBuilder;
 
 	fn underlying_mut(&mut self) -> &mut TlsConnectorBuilder {
-		&mut self.0
+		&mut self.builder
 	}
 
 	fn supports_alpn() -> bool {
@@ -24,32 +86,19 @@ impl tls_api::TlsConnectorBuilder for ApnsConnectorBuilder {
 	}
 
 	fn set_alpn_protocols(&mut self, protos: &[&[u8]]) -> tls_api::Result<()> {
-		self.0.set_alpn_protocols(protos)
+		self.builder.set_alpn_protocols(protos)
 	}
 
 	fn add_root_certificate(&mut self, cert: tls_api::Certificate) -> tls_api::Result<&mut Self> {
-		self.0.add_root_certificate(cert)?;
+		self.builder.add_root_certificate(cert)?;
 		Ok(self)
 	}
 
 	fn build(self) -> tls_api::Result<ApnsConnector> {
-		let ApnsConnectorBuilder(mut inner) = self;
-		{
-			let underlying = inner.underlying_mut();
-			// FIXME: assure the unwraps are sound before constructing a client
+		let ApnsConnectorBuilder { builder: mut inner, auth } = self;
 
-			let cert = env::var("APNS_CERT_FILE").unwrap();
-			let key = env::var("APNS_PRIVATE_KEY_FILE").unwrap();
-			let ca = env::var("APNS_CA_FILE").unwrap();
+		auth.build(inner.underlying_mut())?;
 
-			underlying.set_ca_file(&ca).unwrap();
-			underlying
-				.set_certificate_file(&cert, X509_FILETYPE_PEM)
-				.unwrap();
-			underlying
-				.set_private_key_file(&key, X509_FILETYPE_PEM)
-				.unwrap();
-		}
 		Ok(ApnsConnector(inner.build()?))
 	}
 }
@@ -58,14 +107,20 @@ impl tls_api::TlsConnector for ApnsConnector {
 	type Builder = ApnsConnectorBuilder;
 
 	fn builder() -> tls_api::Result<ApnsConnectorBuilder> {
-		Ok(ApnsConnectorBuilder(TlsConnector::builder()?))
+		let mut auth = None;
+		AUTH.with(|a| auth = a.borrow().clone());
+
+		Ok(ApnsConnectorBuilder {
+			builder: TlsConnector::builder()?,
+			auth: auth.unwrap(),
+		})
 	}
 
 	fn connect<S>(
 		&self,
 		domain: &str,
 		stream: S,
-	) -> Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
+	) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
 	where
 		S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
 	{
@@ -77,7 +132,7 @@ impl tls_api::TlsConnector for ApnsConnector {
 	>(
 		&self,
 		stream: S,
-	) -> Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
+	) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
 	where
 		S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
 	{
