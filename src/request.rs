@@ -2,6 +2,7 @@ use std::fmt;
 use std::time::SystemTime;
 use std::sync::Arc;
 use std::str::{self, FromStr};
+use std::ascii::AsciiExt;
 
 use json;
 
