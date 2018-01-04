@@ -1,3 +1,5 @@
+//! An Apple push-notifications client using the http2 push notification protocol
+#![deny(missing_docs)]
 #[macro_use]
 extern crate error_chain;
 extern crate futures;
@@ -26,14 +28,17 @@ pub use request::{DeviceToken, Priority, Request};
 const PROD_SERVER: &str = "api.push.apple.com";
 const DEV_SERVER: &str = "api.development.push.apple.com";
 
+/// A future representing the successful or failed result of sending a notification
 pub type ApnsFuture = Box<futures::Future<Item = (), Error = Error>>;
 
+/// A connection to an apns server
 pub struct Client {
 	client: httpbis::Client,
 	server: &'static str,
 }
 
 impl Client {
+	/// Creates a new production apns-client, corresponds to `api.push.apple.com`
 	pub fn new(auth: &Auth) -> Result<Self> {
 		AUTH.with(|a| *a.borrow_mut() = Some(auth.clone()));
 		let client =
@@ -44,6 +49,7 @@ impl Client {
 		})
 	}
 
+	/// Creates a new development apns-client, corresponds to `api.development.push.apple.com`
 	pub fn sandbox(auth: &Auth) -> Result<Self> {
 		AUTH.with(|a| *a.borrow_mut() = Some(auth.clone()));
 		let client =
@@ -54,6 +60,7 @@ impl Client {
 		})
 	}
 
+	/// Send a request to the apns server
 	pub fn send(&self, request: Request) -> ApnsFuture {
 		let Request {
 			recipient,

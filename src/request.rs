@@ -8,12 +8,16 @@ use json;
 
 use error::{Error, ErrorKind, Result};
 
+/// The priority at which the notification should be sent
 #[derive(Clone, Debug)]
 pub enum Priority {
+	/// High priority notification
 	High,
+	/// Low priority notification
 	Low,
 }
 
+/// A device token identifying the target of a notification
 #[derive(Clone, Debug)]
 pub struct DeviceToken([u8; 32]);
 
@@ -44,6 +48,7 @@ impl FromStr for DeviceToken {
 	}
 }
 
+/// A request to the apns server, corresponding to a notification
 pub struct Request {
 	pub(crate) recipient: DeviceToken,
 	pub(crate) payload: Arc<json::Value>,
@@ -52,6 +57,7 @@ pub struct Request {
 }
 
 impl Request {
+	/// Construct a new notification request to be sent to the server
 	pub fn new<P: Into<Arc<json::Value>>>(
 		recipient: DeviceToken,
 		payload: P,

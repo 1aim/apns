@@ -17,6 +17,7 @@ thread_local! {
 	pub static AUTH: RefCell<Option<Auth>> = RefCell::new(None);
 }
 
+/// Authorization information for the tls connection to the apns server
 #[derive(Clone, Debug)]
 pub struct Auth {
 	cert: PathBuf,
@@ -25,6 +26,8 @@ pub struct Auth {
 }
 
 impl Auth {
+	/// Construct a new `Auth` value given the paths to a certificate, a key and
+	/// a certificate authority.
 	pub fn new<Cert, Key, Ca>(cert: Cert, key: Key, ca: Ca) -> Result<Self>
 	where
 		Cert: AsRef<Path>,
@@ -46,15 +49,7 @@ impl Auth {
 		})
 	}
 
-	pub fn mock() -> Self {
-		Auth {
-			cert: "testcert/cert.pem".into(),
-			key: "testcert/key.pem".into(),
-			ca: "testcrc/ca.pem".into(),
-		}
-	}
-
-	pub fn build(&self, b: &mut ssl::SslConnectorBuilder) -> tls_api::Result<()> {
+	fn build(&self, b: &mut ssl::SslConnectorBuilder) -> tls_api::Result<()> {
 		b.set_ca_file(&self.ca).map_err(tls_api::Error::new)?;
 		b.set_certificate_file(&self.cert, X509_FILETYPE_PEM)
 			.map_err(tls_api::Error::new)?;;
