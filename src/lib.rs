@@ -72,7 +72,6 @@ impl Client {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use std::sync::Arc;
 	use std::str::FromStr;
 
 	#[test]
@@ -83,18 +82,16 @@ mod tests {
 			env::var("APNS_CA_FILE").unwrap(),
 		).unwrap();
 
-		let request = Request::new(
-			DeviceToken::from_str(&env::var("APNS_DEVICE_TOKEN").unwrap()).unwrap(),
-			Arc::new(json!({
-				"action": "warning",
-				"title": "wonk",
-				"description": "tjusning"
-			})),
-			None,
-			None,
-		);
+		let token = DeviceToken::from_str(&env::var("APNS_DEVICE_TOKEN").unwrap()).unwrap();
+		let payload = json!({
+			"action": "warning",
+			"title": "wonk",
+			"description": "tjusning"
+		});
+
+		let request = Request::new(token, payload, None, None);
 		let client = Client::new(&auth).unwrap();
 
-		client.send(request).wait();
+		client.send(request).wait().unwrap();
 	}
 }

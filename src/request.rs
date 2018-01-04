@@ -52,15 +52,15 @@ pub struct Request {
 }
 
 impl Request {
-	pub fn new(
+	pub fn new<P: Into<Arc<json::Value>>>(
 		recipient: DeviceToken,
-		payload: Arc<json::Value>,
+		payload: P,
 		priority: Option<Priority>,
 		expiration: Option<SystemTime>,
 	) -> Self {
 		Request {
 			recipient,
-			payload,
+			payload: payload.into(),
 			priority,
 			expiration,
 		}
