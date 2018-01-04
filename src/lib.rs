@@ -30,6 +30,7 @@ pub type ApnsFuture = Box<futures::Future<Item = (), Error = Error>>;
 
 pub struct Client {
 	client: httpbis::Client,
+	server: &'static str,
 }
 
 impl Client {
@@ -37,14 +38,20 @@ impl Client {
 		AUTH.with(|a| *a.borrow_mut() = Some(auth.clone()));
 		let client =
 			httpbis::Client::new_tls::<ApnsConnector>(PROD_SERVER, 443, Default::default())?;
-		Ok(Client { client })
+		Ok(Client {
+			client,
+			server: PROD_SERVER,
+		})
 	}
 
 	pub fn sandbox(auth: &Auth) -> Result<Self> {
 		AUTH.with(|a| *a.borrow_mut() = Some(auth.clone()));
 		let client =
 			httpbis::Client::new_tls::<ApnsConnector>(DEV_SERVER, 443, Default::default())?;
-		Ok(Client { client })
+		Ok(Client {
+			client,
+			server: DEV_SERVER,
+		})
 	}
 
 	pub fn send(&self, request: Request) -> ApnsFuture {
@@ -59,7 +66,7 @@ impl Client {
 			self.client
 				.start_post(
 					&format!("/3/device/{:X}", recipient),
-					DEV_SERVER,
+					self.server,
 					payload.to_string().into(),
 				)
 				.collect()
@@ -90,7 +97,7 @@ mod tests {
 		});
 
 		let request = Request::new(token, payload, None, None);
-		let client = Client::new(&auth).unwrap();
+		let client = Client::sandbox(&auth).unwrap();
 
 		client.send(request).wait().unwrap();
 	}
