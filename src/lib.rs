@@ -13,6 +13,7 @@ extern crate tls_api_openssl;
 
 use std::env;
 use futures::Future;
+use httpbis::{Header, Headers};
 
 mod auth;
 use auth::{ApnsConnector, AUTH};
@@ -69,15 +70,25 @@ impl Client {
 			expiration,
 		} = request;
 
+		let mut headers = vec![
+			Header::new(":method", "POST"),
+			Header::new(":path", format!("/3/device/{:X}", recipient)),
+			Header::new(":authority", self.server),
+		];
+
+		if let Some(prio) = priority {
+			headers.push(Header::new("apns-priority", prio));
+		}
+
+		if let Some(expi) = expiration {
+			headers.push(Header::new("apns-expiration", expi));
+		}
+
 		Box::new(
 			self.client
-				.start_post(
-					&format!("/3/device/{:X}", recipient),
-					self.server,
-					payload.to_string().into(),
-				)
+				.start_request_simple(Headers(headers), payload.to_string().into())
 				.collect()
-				.map(|_| ())
+				.map(|a| println!("{:?}", a.dump()))
 				.map_err(Into::into),
 		)
 	}
@@ -87,6 +98,7 @@ impl Client {
 mod tests {
 	use super::*;
 	use std::str::FromStr;
+	use std::time::SystemTime;
 
 	#[test]
 	fn it_works() {
@@ -103,7 +115,7 @@ mod tests {
 			"description": "tjusning"
 		});
 
-		let request = Request::new(token, payload, None, None);
+		let request = Request::new(token, payload, Some(Priority::Low), Some(SystemTime::now()));
 		let client = Client::sandbox(&auth).unwrap();
 
 		client.send(request).wait().unwrap();

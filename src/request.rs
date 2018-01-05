@@ -1,10 +1,11 @@
 use std::fmt;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::sync::Arc;
 use std::str::{self, FromStr};
 use std::ascii::AsciiExt;
 
 use json;
+use httpbis::solicit::header::HeaderPart;
 
 use error::{Error, ErrorKind, Result};
 
@@ -15,6 +16,35 @@ pub enum Priority {
 	High,
 	/// Low priority notification
 	Low,
+}
+
+pub struct Expiration(SystemTime);
+
+impl Into<HeaderPart> for Priority {
+	fn into(self) -> HeaderPart {
+		match self {
+			Priority::High => "10",
+			Priority::Low => "5",
+		}.into()
+	}
+}
+
+impl Into<HeaderPart> for Expiration {
+	fn into(self) -> HeaderPart {
+		format!(
+			"{}",
+			self.0
+				.duration_since(UNIX_EPOCH)
+				.unwrap_or(Duration::new(0, 0))
+				.as_secs()
+		).into()
+	}
+}
+
+impl Into<Expiration> for SystemTime {
+	fn into(self) -> Expiration {
+		Expiration(self)
+	}
 }
 
 /// A device token identifying the target of a notification
@@ -53,22 +83,22 @@ pub struct Request {
 	pub(crate) recipient: DeviceToken,
 	pub(crate) payload: Arc<json::Value>,
 	pub(crate) priority: Option<Priority>,
-	pub(crate) expiration: Option<SystemTime>,
+	pub(crate) expiration: Option<Expiration>,
 }
 
 impl Request {
 	/// Construct a new notification request to be sent to the server
-	pub fn new<P: Into<Arc<json::Value>>>(
+	pub fn new<P: Into<Arc<json::Value>>, E: Into<Expiration>>(
 		recipient: DeviceToken,
 		payload: P,
 		priority: Option<Priority>,
-		expiration: Option<SystemTime>,
+		expiration: Option<E>,
 	) -> Self {
 		Request {
 			recipient,
 			payload: payload.into(),
 			priority,
-			expiration,
+			expiration: expiration.map(|e| e.into()),
 		}
 	}
 }
