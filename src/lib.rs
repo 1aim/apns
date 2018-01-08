@@ -1,5 +1,6 @@
 //! An Apple push-notifications client using the http2 push notification protocol
 #![deny(missing_docs)]
+extern crate chrono;
 #[macro_use]
 extern crate error_chain;
 extern crate futures;
@@ -12,6 +13,7 @@ extern crate tls_api;
 extern crate tls_api_openssl;
 
 use std::env;
+
 use futures::Future;
 use httpbis::{Header, Headers};
 
@@ -98,7 +100,7 @@ impl Client {
 mod tests {
 	use super::*;
 	use std::str::FromStr;
-	use std::time::SystemTime;
+	use chrono::{Duration, Utc};
 
 	#[test]
 	fn it_works() {
@@ -115,7 +117,12 @@ mod tests {
 			"description": "tjusning"
 		});
 
-		let request = Request::new(token, payload, Some(Priority::Low), Some(SystemTime::now()));
+		let request = Request::new(
+			token,
+			payload,
+			Some(Priority::High),
+			Some(Utc::now() + Duration::days(137)),
+		);
 		let client = Client::sandbox(&auth).unwrap();
 
 		client.send(request).wait().unwrap();

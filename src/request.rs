@@ -1,9 +1,9 @@
 use std::fmt;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::sync::Arc;
 use std::str::{self, FromStr};
 use std::ascii::AsciiExt;
 
+use chrono::{DateTime, Utc};
 use json;
 use httpbis::solicit::header::HeaderPart;
 
@@ -18,7 +18,7 @@ pub enum Priority {
 	Low,
 }
 
-pub struct Expiration(SystemTime);
+pub struct Expiration(DateTime<Utc>);
 
 impl Into<HeaderPart> for Priority {
 	fn into(self) -> HeaderPart {
@@ -31,17 +31,11 @@ impl Into<HeaderPart> for Priority {
 
 impl Into<HeaderPart> for Expiration {
 	fn into(self) -> HeaderPart {
-		format!(
-			"{}",
-			self.0
-				.duration_since(UNIX_EPOCH)
-				.unwrap_or(Duration::new(0, 0))
-				.as_secs()
-		).into()
+		format!("{}", self.0.timestamp()).into()
 	}
 }
 
-impl Into<Expiration> for SystemTime {
+impl Into<Expiration> for DateTime<Utc> {
 	fn into(self) -> Expiration {
 		Expiration(self)
 	}
@@ -88,11 +82,11 @@ pub struct Request {
 
 impl Request {
 	/// Construct a new notification request to be sent to the server
-	pub fn new<P: Into<Arc<json::Value>>, E: Into<Expiration>>(
+	pub fn new<P: Into<Arc<json::Value>>>(
 		recipient: DeviceToken,
 		payload: P,
 		priority: Option<Priority>,
-		expiration: Option<E>,
+		expiration: Option<DateTime<Utc>>,
 	) -> Self {
 		Request {
 			recipient,
