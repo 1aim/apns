@@ -48,7 +48,7 @@ pub struct DeviceToken([u8; 32]);
 impl fmt::UpperHex for DeviceToken {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		for byte in self.0.iter() {
-			write!(f, "{:X}", byte)?;
+			write!(f, "{:02X}", byte)?;
 		}
 		Ok(())
 	}
