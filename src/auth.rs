@@ -28,6 +28,15 @@ pub struct Auth {
 impl Auth {
 	/// Construct a new `Auth` value given the paths to a certificate, a key and
 	/// a certificate authority.
+	///
+	/// # `cert`
+	/// Expects a `.pem` file holding the certificate.
+	///
+	/// # `key`
+	/// Expects a `.key` file, for the connection private key.
+	///
+	/// # `ca`
+	/// Expects a `.pem` file, the certificate authority.
 	pub fn new<Cert, Key, Ca>(cert: Cert, key: Key, ca: Ca) -> Result<Self>
 	where
 		Cert: AsRef<Path>,
@@ -90,7 +99,10 @@ impl tls_api::TlsConnectorBuilder for ApnsConnectorBuilder {
 	}
 
 	fn build(self) -> tls_api::Result<ApnsConnector> {
-		let ApnsConnectorBuilder { builder: mut inner, auth } = self;
+		let ApnsConnectorBuilder {
+			builder: mut inner,
+			auth,
+		} = self;
 
 		auth.build(inner.underlying_mut())?;
 

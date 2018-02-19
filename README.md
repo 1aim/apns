@@ -21,6 +21,8 @@ let client = Client::new(&auth).unwrap();
 client.send(request).wait().unwrap();
 ```
 
-# todo
+# Note
 
-priority and expiration are currently not implemented
+Since the `httpbis` crate does not support any non-hacky way of setting up certificates for
+the https connection, the auth information is passed to the connection builder in a thread
+local.
